@@ -15,10 +15,28 @@ metadata:
   language: Java
   attributes:
     alpha.dockerimage-port: 8081
-parent:
-  id: java-quarkus
-  registryUrl: 'https://registry.devfile.io'
 components:
+  - name: tools
+    container:
+      image: registry.access.redhat.com/ubi8/openjdk-17
+      args: ['tail', '-f', '/dev/null']
+      memoryLimit: 512Mi ## default app nowhere needs this but leaving room for expansion.
+      mountSources: true
+      volumeMounts:
+        - name: m2
+          path: /home/user/.m2
+      endpoints:
+        - name: http-quarkus
+          targetPort: 8080
+        - exposure: none
+          name: debug
+          targetPort: 5858
+      env:
+        - name: DEBUG_PORT
+          value: '5858'
+  - name: m2
+    volume:
+      size: 3Gi
   - name: image-build
     image:
       imageName: java-quarkus-image:latest
@@ -55,3 +73,29 @@ commands:
       group:
         kind: deploy
         isDefault: true
+  - id: init-compile
+    exec:
+      component: tools
+      commandLine: 'mvn -Dmaven.repo.local=/home/user/.m2/repository compile'
+      workingDir: ${PROJECT_SOURCE}
+  - id: dev-run
+    exec:
+      component: tools
+      commandLine: 'mvn -Dmaven.repo.local=/home/user/.m2/repository quarkus:dev -Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager'
+      hotReloadCapable: true
+      group:
+        kind: run
+        isDefault: true
+      workingDir: ${PROJECT_SOURCE}
+  - id: dev-debug
+    exec:
+      component: tools
+      commandLine: 'mvn -Dmaven.repo.local=/home/user/.m2/repository quarkus:dev -Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Ddebug=${DEBUG_PORT}'
+      hotReloadCapable: true
+      group:
+        kind: debug
+        isDefault: true
+      workingDir: ${PROJECT_SOURCE}
+events:
+  postStart:
+    - init-compile
